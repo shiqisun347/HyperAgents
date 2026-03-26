@@ -56,6 +56,29 @@ python generate_loop.py --domains <domain>
 
 By default, outputs will be saved in `outputs/` directory.
 
+## 项目运行逻辑与示例
+
+下面以中文简述 HyperAgents 的核心运行流程，并给出一个最简单的单任务示例（`paper_review` 域）：
+
+- **总体流程（`generate_loop.py`）**  
+  1. 初始化：`setup_initial_gen` 会把 `outputs/initial_*` 里的基线评测复制到新的输出目录（`outputs/generate_<run_id>/gen_initial`），并创建 `archive.jsonl` 记录世代节点。  
+  2. 每一代（`generate`）：在 Docker 中复制仓库，应用上一代的补丁，然后调用 `run_meta_agent.py` 生成新的补丁，输出到 `gen_<id>/agent_output/model_patch.diff` 和聊天记录。  
+  3. 评测：如果模型补丁非空，就用 `domains/harness.py`（或 `domains/polyglot/harness.py`）运行 `task_agent.py`，把预测与评分写入 `gen_<id>/<domain>_eval/` 下的 `predictions.csv`、`report.json`，并更新 `gen_<id>/metadata.json`。  
+  4. 选父代：`select_parent` 根据得分（默认 `score_child_prop`）从 `archive.jsonl` 里选择下一代的父节点，继续迭代直到达到 `max_generation`。
+
+- **最简示例：在 `paper_review` 域跑一代**  
+  1. 准备：安装依赖并执行 `bash setup_initial.sh`（脚本默认只启用 `paper_review`，会在 `outputs/initial_paper_review_*` 下生成基线结果）。确保 Docker 可用并已写入所需 API Key 到 `.env`。  
+  2. 运行：  
+     ```bash
+     python generate_loop.py --domains paper_review --max_generation 1 --eval_samples 10 --eval_workers 2 --run_id demo_paper
+     ```  
+  3. 结果查看（位于 `outputs/generate_demo_paper/`）：  
+     - `gen_initial/`：拷贝的基线评测。  
+     - `gen_1/agent_output/`：`model_patch.diff` 与 `meta_agent_chat_history.md`。  
+     - `gen_1/paper_review_eval/`：模型在 `paper_review` 数据集上的 `predictions.csv` 与 `report.json`。  
+     - `gen_1/metadata.json`：记录本代的父节点、补丁列表、是否完成全量评测等元数据。  
+     - `archive.jsonl`：跨世代的节点与得分轨迹。
+
 ## File Structure
 - `agent/` code for using foundation models
 - `analysis/` scripts used for plotting and analysis
@@ -91,4 +114,3 @@ If you find this project useful, please consider citing:
       url={https://arxiv.org/abs/2603.19461}, 
 }
 ```
-
