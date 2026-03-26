@@ -56,6 +56,38 @@ python generate_loop.py --domains <domain>
 
 By default, outputs will be saved in `outputs/` directory.
 
+## 运行逻辑（含简单示例）
+下面以最小化的 `paper_review` 任务为例，说明整体流程如何运行、存储结果与循环自我改进：
+
+1) **准备初始数据与基线**  
+   运行 `bash setup_initial.sh`（默认只开启 `paper_review`），会生成 `outputs/initial_paper_review_filtered_100_{train,val,test}_0/`，作为首代评测基线。
+
+2) **启动生成循环**  
+   例如只跑 1 代小样本测试：  
+   ```bash
+   python generate_loop.py \
+     --domains paper_review \
+     --max_generation 1 \
+     --eval_samples 10 \
+     --eval_workers 2 \
+     --parent_selection latest
+   ```  
+   关键行为：  
+   - `setup_initial_gen` 会把当前仓库和初始评测结果复制到 `outputs/generate_<run_id>/gen_initial/`，作为可编辑的工作副本。  
+   - 每一代在 Docker 容器内运行，先应用父代的补丁，再调用 **MetaAgent**（见 `run_meta_agent.py`）让模型修改代码，产出 `agent_output/model_patch.diff`。  
+   - 若补丁非空则进入评测，调用 `domains/harness.py` 运行 **TaskAgent**（`task_agent.py`）在 `paper_review` 数据集上生成预测，并由 `domains.report` 计算得分。评测产物保存在对应 `gen_<id>/paper_review_eval*`。
+
+3) **记录与选择下一父节点**  
+   - 当前代元数据存于 `outputs/generate_<run_id>/gen_<id>/metadata.json`，包含补丁、是否评测成功等标记。  
+   - `archive.jsonl` 记录所有代的得分，用于 `select_parent` 选择下一轮的父代（示例里 `latest` 即总是选最近一代）。  
+   - 如启用 `ensemble` 选项，会对历史代进行集成评估（`get_ensemble_scores_container`）。
+
+4) **查看结果**  
+   - 代码改动：`gen_<id>/agent_output/model_patch.diff`。  
+   - 交互日志：`gen_<id>/agent_output/meta_agent_chat_history.md`。  
+   - 预测与评分：`gen_<id>/paper_review_eval*/predictions.csv` 与 `report.json`。  
+   - 进度图：自动生成在 `gen_<id>/` 内（如 `progress_paper_review_agent_train.png`），用于可视化表现。
+
 ## File Structure
 - `agent/` code for using foundation models
 - `analysis/` scripts used for plotting and analysis
@@ -91,4 +123,3 @@ If you find this project useful, please consider citing:
       url={https://arxiv.org/abs/2603.19461}, 
 }
 ```
-
